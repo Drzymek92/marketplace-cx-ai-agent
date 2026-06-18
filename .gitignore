@@ -1,0 +1,29 @@
+# environment
+.venv/
+.env
+config/.env
+
+# data — never commit raw inputs, generated DBs, or outputs
+scripts/inputs/
+scripts/outputs/
+logs/
+*.db
+scripts/improvement/eval_snapshot.json
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# credentials
+*.json
+*.p12
+# ...but keep the committed frozen eval baseline (not a credential)
+!scripts/improvement/eval_baseline.json
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store

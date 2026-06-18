@@ -1,0 +1,102 @@
+# marketplace-cx-agent — example configuration
+# The runtime is driven entirely from this file. Copy to config.yaml and edit.
+# Nothing here is secret — secrets (LLM gateway creds) live in config/.env (see .env.example).
+
+# ---------------------------------------------------------------------------
+# 1. MODULE TOGGLES — turn whole subsystems on/off for cheap/minimal runs
+# ---------------------------------------------------------------------------
+modules:
+  user_profile: true          # load + personalize from per-user profile
+  conversation_history: true
+  hitl_review: true           # human-in-the-loop gate before high-stakes replies
+  feedback_capture: true      # collect ratings/corrections for the improvement loop
+  auto_tuning: true           # offline: prompts/few-shot/thresholds auto-optimized (Track A)
+  semantic_cache: true
+
+# ---------------------------------------------------------------------------
+# 2. TOKEN / COST GOVERNOR — the primary cost-control surface
+# ---------------------------------------------------------------------------
+budget:
+  # hard ceilings — agent degrades gracefully when hit (see degradation ladder)
+  per_turn_tokens: 4000
+  per_conversation_tokens: 30000
+  daily_tokens: 2000000
+  currency_cap_usd_per_day: 5.0        # optional hard spend stop (enforced only if a rate is set)
+  usd_per_1k_tokens: 0.0               # nominal token→USD rate; 0 = USD cap disabled (no real pricing)
+
+  # model routing by task tier (cheapest tier that clears each task)
+  model_tiers:
+    intent_classify: fast              # cheapest model
+    faq_simple:       fast
+    tool_use:         bulk             # default workhorse model
+    complex_reason:   reason           # most capable model (only when escalated)
+  escalation:
+    to_complex_when_confidence_below: 0.55
+    high_stakes_intents: [refund, dispute, commission_charge]   # always >= tool_use tier
+
+  # how much context we are willing to pay for
+  context:
+    max_history_turns: 8
+    summarize_history_above_turns: 8   # roll older turns into a running summary
+    profile_fields: [smart_status, locale, tone_pref, recent_issues]
+    max_graphql_records: 20
+
+  compression:
+    enabled: true
+    min_prompt_words: 50               # passthrough below this (project-wide rule)
+
+  degradation_when_over_budget:        # ordered fallbacks applied in sequence
+    - drop_to_cheaper_tier
+    - shrink_context
+    - cached_or_canned_only
+    - handoff_to_human
+
+# ---------------------------------------------------------------------------
+# 3. BUSINESS RULES — thresholds, versioned so tuning can adjust them safely
+# ---------------------------------------------------------------------------
+rules:
+  version: v1
+  returns:
+    window_days: 14
+    smart_free_return: true
+    non_returnable_categories: [perishable, personalized, digital_unsealed]
+  commission:
+    default_pct: 0.10
+    per_category_pct:
+      electronics: 0.08
+      fashion: 0.12
+    transaction_fee_pln: 1.0
+  eligibility:
+    dispute_window_days: 30
+
+# ---------------------------------------------------------------------------
+# 4. HITL FEEDBACK + IMPROVEMENT LOOP
+# ---------------------------------------------------------------------------
+feedback:
+  channels: [thumbs, free_text_correction, agent_edit, escalation_flag]
+  store: sqlite                        # feedback.db
+  simulate_reviewer: true              # HITL realism: a simulated reviewer signs off flagged turns
+                                       # (set false to capture only external/user signals via /feedback)
+  audit_sample_rate: 0.05              # also review a random 5% of NON-flagged turns — unbiased audit
+                                       # (COPC CX 7.0 / AWS A2I: review isn't limited to flagged cases)
+
+# Classifier tuning surface — Module 6 Track A writes few-shot exemplars here (from approved turns).
+classify:
+  fewshot: []                          # [{message, intent}] — auto-tuned; empty = zero-shot classify
+
+improvement:
+  aggregate_schedule: nightly          # nightly | manual | "<cron>"
+  auto_promote_if:                     # Track A gate
+    beats_baseline_metric: resolution_rate
+    min_delta: 0.02
+    and_within_budget: true
+  sft:                                 # Track B — weight fine-tune, human-gated
+    enabled: false                     # inference-only gateway; needs external/open-weights path
+    export_format: [sft_jsonl, dpo_pairs]
+
+# ---------------------------------------------------------------------------
+# 5. PRIVACY
+# ---------------------------------------------------------------------------
+privacy:
+  mask_pii_in_logs: true
+  history_retention_days: 90

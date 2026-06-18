@@ -1,0 +1,59 @@
+{
+  "note": "Frozen eval set for Module 6 Track A. References the real seeded orders (seed_data.py). Expectations are intentionally TIME-STABLE: no case depends on the wall clock relative to the 14-day returns / 30-day dispute windows. Positive returnable/refund cases are omitted on purpose because their outcome flips as 'now' advances past the seed dates (placed 2026-06-10 etc.) — a frozen baseline must not silently change verdict over time. Run against a live GraphQL server (or inject FakeClient tools in tests). Rule expectations are matched against the retrieved decision dict (any tool's data containing the given field=value).",
+  "cases": [
+    {
+      "id": "return-outside-window",
+      "message": "Can I return ORD-4002?",
+      "buyer_id": "BUY-1002",
+      "expected_intent": "return_check",
+      "expected_needs_human": false,
+      "expected_rule": {"returnable": false}
+    },
+    {
+      "id": "return-not-delivered",
+      "message": "I'd like to return ORD-4003",
+      "buyer_id": "BUY-1003",
+      "expected_intent": "return_check",
+      "expected_needs_human": false,
+      "expected_rule": {"returnable": false}
+    },
+    {
+      "id": "commission-known-value",
+      "message": "What is the commission on ORD-4001?",
+      "buyer_id": "BUY-1001",
+      "expected_intent": "commission_query",
+      "expected_needs_human": true,
+      "expected_rule": {"total_commission": "31.16"}
+    },
+    {
+      "id": "refund-outside-window",
+      "message": "I want a refund on ORD-4002",
+      "buyer_id": "BUY-1002",
+      "expected_intent": "refund_eligibility",
+      "expected_needs_human": true,
+      "expected_rule": {"eligible": false}
+    },
+    {
+      "id": "dispute-outside-window",
+      "message": "I want to open a dispute for ORD-4002",
+      "buyer_id": "BUY-1002",
+      "expected_intent": "dispute_eligibility",
+      "expected_needs_human": true,
+      "expected_rule": {"eligible": false}
+    },
+    {
+      "id": "order-status",
+      "message": "where is my order ORD-4001?",
+      "buyer_id": "BUY-1001",
+      "expected_intent": "order_status",
+      "expected_needs_human": false
+    },
+    {
+      "id": "faq-return-policy",
+      "message": "What is your return policy?",
+      "buyer_id": null,
+      "expected_intent": "faq",
+      "expected_needs_human": false
+    }
+  ]
+}

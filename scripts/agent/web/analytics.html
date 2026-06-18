@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marketplace CX Agent — analytics</title>
+  <style>
+    :root {
+      --bg:#0f1115; --panel:#1a1d24; --panel2:#11141a; --line:#2a2e37;
+      --muted:#8b93a3; --text:#e6e8ee; --accent:#22c55e; --blue:#2563eb;
+      --warn:#f59e0b; --purple:#a78bfa; --cyan:#22d3ee; --red:#ef4444;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background:var(--bg); color:var(--text); }
+    a { color:var(--blue); text-decoration:none; }
+    header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex;
+             align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    header h1 { font-size:17px; margin:0; }
+    header .sub { font-size:12px; color:var(--muted); }
+    .wrap { max-width:1100px; margin:0 auto; padding:22px 24px 60px; }
+    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+         margin:30px 0 12px; font-weight:600; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; }
+    .kpi { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+    .kpi .v { font-size:26px; font-weight:700; line-height:1.1; }
+    .kpi .l { font-size:11px; color:var(--muted); margin-top:4px; }
+    .kpi .h { font-size:11px; color:var(--muted); }
+    .kpi.hero { background:linear-gradient(140deg,#15321f,#16203a); border-color:#244a33; }
+    .kpi.hero .v { color:var(--accent); font-size:30px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+            display:flex; flex-direction:column; gap:8px; }
+    .card .top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+    .card .name { font-weight:600; font-size:14px; }
+    .card .layer { font-size:10.5px; color:var(--muted); margin-top:2px; }
+    .card .stat { text-align:right; white-space:nowrap; }
+    .card .stat .n { font-size:22px; font-weight:700; }
+    .card .stat .u { font-size:12px; color:var(--muted); }
+    .card .stat .sl { font-size:10px; color:var(--muted); }
+    .card .detail { font-size:11.5px; color:var(--muted); line-height:1.5; }
+    .card .insight { font-size:11.5px; border-top:1px solid var(--line); padding-top:8px;
+                     color:#c7cdda; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+    table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    th,td { text-align:right; padding:7px 10px; border-bottom:1px solid var(--line); }
+    th:first-child, td:first-child { text-align:left; }
+    th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+    .bar-row { display:flex; align-items:center; gap:10px; margin:7px 0; font-size:12px; }
+    .bar-row .lbl { width:120px; color:var(--muted); }
+    .bar-track { flex:1; background:var(--panel2); border-radius:6px; height:18px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:6px; }
+    .bar-row .val { width:64px; text-align:right; color:var(--muted); }
+    .empty { color:var(--muted); font-size:13px; padding:40px; text-align:center; }
+    .pill { font-size:10.5px; border:1px solid var(--line); border-radius:6px; padding:1px 7px; color:var(--muted); }
+    .pill.warn { color:var(--warn); border-color:var(--warn); }
+    .pill.ok { color:var(--accent); border-color:var(--accent); }
+    @media (max-width:720px) { .grid2 { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Marketplace CX Agent — performance analytics</h1>
+      <div class="sub">How each module operates &amp; where the cost is optimized · unaffiliated Allegro-style demo</div>
+    </div>
+    <div class="sub"><a href="/">← chat UI</a> &nbsp;·&nbsp; <span id="gen"></span> &nbsp;·&nbsp; <a href="#" id="refresh">refresh</a></div>
+  </header>
+  <div class="wrap" id="root">
+    <div class="empty">Loading…</div>
+  </div>
+
+  <script>
+    const COL = ['#22c55e','#2563eb','#a78bfa','#22d3ee','#f59e0b','#ef4444','#8b93a3'];
+    const pct = (r) => (100 * r).toFixed(1) + '%';
+    const el = (tag, cls, html) => { const d = document.createElement(tag); if (cls) d.className = cls; if (html != null) d.innerHTML = html; return d; };
+
+    function kpiCard(v, label, hint, hero) {
+      return `<div class="kpi ${hero ? 'hero' : ''}"><div class="v">${v}</div>
+              <div class="l">${label}</div>${hint ? `<div class="h">${hint}</div>` : ''}</div>`;
+    }
+
+    function bars(container, entries, total) {
+      total = total || entries.reduce((s, e) => s + e.value, 0);
+      container.innerHTML = '';
+      if (!total) { container.innerHTML = '<div class="empty">no data yet</div>'; return; }
+      entries.forEach((e, i) => {
+        const row = el('div', 'bar-row');
+        const w = total ? (100 * e.value / total) : 0;
+        row.innerHTML = `<div class="lbl">${e.label}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${w.toFixed(1)}%;background:${e.color || COL[i % COL.length]}"></div></div>
+          <div class="val">${e.value} · ${w.toFixed(0)}%</div>`;
+        container.appendChild(row);
+      });
+    }
+
+    function render(d) {
+      const root = document.getElementById('root');
+      root.innerHTML = '';
+      document.getElementById('gen').textContent = 'as of ' + (d.generated_at || '').replace('T', ' ').slice(0, 19) + ' UTC';
+      const k = d.kpis;
+      if (!k.turns) {
+        root.innerHTML = '<div class="empty">No telemetry yet. Run the demo seeder or chat with the agent, then refresh.<br><br>'
+          + '<code>python scripts/improvement/seed_demo.py</code></div>';
+        return;
+      }
+
+      // ---- KPI row ---------------------------------------------------------
+      root.appendChild(el('h2', null, 'Headline'));
+      const kp = el('div', 'kpis');
+      kp.innerHTML =
+        kpiCard(pct(k.llm_reduction_rate), 'LLM calls avoided', `${k.llm_calls_avoided} of ${k.naive_llm_calls} naive calls cut`, true)
+        + kpiCard(k.turns, 'turns served', `${k.total_llm_calls} LLM calls total`)
+        + kpiCard(k.avg_llm_calls_per_turn, 'avg LLM calls / turn', 'naive baseline = 2.0')
+        + kpiCard(pct(k.classify_deflection_rate), 'classify deflection', 'intent resolved w/o LLM')
+        + kpiCard(pct(k.zero_llm_rate), 'zero-LLM turns', 'FAQ + cache hits')
+        + kpiCard(pct(k.cache_hit_rate), 'semantic cache hit')
+        + kpiCard(pct(k.escalation_rate), 'HITL escalation')
+        + kpiCard(k.avg_tokens_per_turn, 'avg tokens / turn', `${k.total_tokens.toLocaleString()} total`);
+      root.appendChild(kp);
+
+      // ---- charts ----------------------------------------------------------
+      root.appendChild(el('h2', null, 'Where the work lands'));
+      const g = el('div', 'grid2');
+      const left = el('div', 'panel'); left.appendChild(el('div', null, '<b style="font-size:12.5px">Classify path</b>'));
+      const cpBars = el('div'); left.appendChild(cpBars);
+      const cp = d.classify_path;
+      bars(cpBars, [
+        { label: 'triage (det.)', value: cp.triage || 0, color: '#22c55e' },
+        { label: 'FAQ (canned)', value: cp.faq || 0, color: '#22d3ee' },
+        { label: 'LLM classify', value: cp.llm || 0, color: '#f59e0b' },
+        { label: 'other', value: cp.other || 0, color: '#8b93a3' },
+      ], k.turns);
+
+      const right = el('div', 'panel'); right.appendChild(el('div', null, '<b style="font-size:12.5px">Respond tier mix</b>'));
+      const tmBars = el('div'); right.appendChild(tmBars);
+      bars(tmBars, Object.entries(d.tier_mix || {}).map(([t, v]) => ({ label: t, value: v })));
+      g.appendChild(left); g.appendChild(right);
+      root.appendChild(g);
+
+      // ---- module cards ----------------------------------------------------
+      root.appendChild(el('h2', null, 'Module operations'));
+      const cards = el('div', 'cards');
+      (d.modules || []).forEach(m => {
+        const c = el('div', 'card');
+        c.innerHTML = `<div class="top">
+            <div><div class="name">${m.name}</div><div class="layer">${m.layer}</div></div>
+            <div class="stat"><span class="n">${m.stat.value}</span><span class="u">${m.stat.unit}</span>
+              <div class="sl">${m.stat.label}</div></div>
+          </div>
+          <div class="detail">${(m.detail || []).join('<br>')}</div>
+          <div class="insight">${m.insight}</div>`;
+        cards.appendChild(c);
+      });
+      root.appendChild(cards);
+
+      // ---- per-intent table -----------------------------------------------
+      root.appendChild(el('h2', null, 'Per-intent cost &amp; quality'));
+      const tp = el('div', 'panel');
+      const rows = Object.entries(d.per_intent || {}).map(([intent, v]) => {
+        const cost = v.cost || {}, q = v.quality || {};
+        return { intent, turns: cost.turns || 0, avg_tokens: cost.avg_tokens || 0,
+                 avg_llm: cost.avg_llm_calls != null ? cost.avg_llm_calls : '–',
+                 cache: cost.cache_hit_rate != null ? pct(cost.cache_hit_rate) : '–',
+                 esc: cost.escalation_rate != null ? pct(cost.escalation_rate) : '–',
+                 reviewed: q.reviewed || 0,
+                 appr: q.approval_rate != null ? pct(q.approval_rate) : '–' };
+      }).sort((a, b) => b.turns - a.turns);
+      let html = '<table><thead><tr><th>intent</th><th>turns</th><th>avg tok</th><th>avg LLM</th>'
+        + '<th>cache</th><th>escal.</th><th>reviewed</th><th>approval</th></tr></thead><tbody>';
+      rows.forEach(r => {
+        html += `<tr><td>${r.intent}</td><td>${r.turns}</td><td>${r.avg_tokens}</td><td>${r.avg_llm}</td>`
+          + `<td>${r.cache}</td><td>${r.esc}</td><td>${r.reviewed}</td><td>${r.appr}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      const cov = d.coverage || {};
+      html += `<div class="layer" style="margin-top:10px;color:var(--muted)">cost = all ${cov.turns || 0} turns (census) · `
+        + `quality = ${cov.reviewed || 0} reviewed (${pct(cov.review_rate || 0)} sample, biased to flagged turns)</div>`;
+      tp.innerHTML = html;
+      root.appendChild(tp);
+
+      // ---- eval ------------------------------------------------------------
+      root.appendChild(el('h2', null, 'Frozen eval (promotion gate)'));
+      const ep = el('div', 'panel');
+      if (d.eval && d.eval.overall_accuracy != null) {
+        const e = d.eval;
+        ep.innerHTML = `<div class="kpis">
+            ${kpiCard(pct(e.overall_accuracy), 'overall accuracy', `n=${e.n} cases`)}
+            ${kpiCard(e.intent_accuracy != null ? pct(e.intent_accuracy) : '–', 'intent')}
+            ${kpiCard(e.rule_accuracy != null ? pct(e.rule_accuracy) : '–', 'rule outcome')}
+            ${kpiCard(e.needs_human_accuracy != null ? pct(e.needs_human_accuracy) : '–', 'HITL gate')}
+            ${kpiCard(e.avg_tokens, 'avg tokens / case')}
+          </div>
+          <div class="layer" style="margin-top:10px">${(e.failures && e.failures.length)
+            ? 'failing cases: ' + e.failures.join(', ') : 'all scored axes passing'}
+            ${e.generated_at ? ' · ran ' + e.generated_at.replace('T',' ').slice(0,19) + ' UTC' : ''}</div>`;
+      } else {
+        ep.innerHTML = '<div class="empty">No eval snapshot. Generate one:<br><br>'
+          + '<code>python scripts/improvement/seed_demo.py --eval</code></div>';
+      }
+      root.appendChild(ep);
+    }
+
+    async function load() {
+      try {
+        const r = await fetch('/analytics.json');
+        render(await r.json());
+      } catch (e) {
+        document.getElementById('root').innerHTML = '<div class="empty">Failed to load analytics: ' + e + '</div>';
+      }
+    }
+    document.getElementById('refresh').addEventListener('click', (e) => { e.preventDefault(); load(); });
+    load();
+  </script>
+</body>
+</html>

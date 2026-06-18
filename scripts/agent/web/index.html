@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marketplace CX Agent — demo</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#1a1d24; --user:#2563eb; --agent:#272b34; --muted:#8b93a3; --accent:#22c55e; --warn:#f59e0b; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:#e6e8ee; height:100vh; display:flex; flex-direction:column; }
+    header { padding:14px 20px; border-bottom:1px solid #2a2e37; }
+    header h1 { font-size:16px; margin:0; }
+    header p { margin:4px 0 0; font-size:12px; color:var(--muted); }
+    #log { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:14px; }
+    .msg { max-width:760px; padding:10px 14px; border-radius:12px; line-height:1.45; white-space:pre-wrap; }
+    .user { align-self:flex-end; background:var(--user); }
+    .agent { align-self:flex-start; background:var(--agent); }
+    .meta { font-size:11px; color:var(--muted); margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; }
+    .tag { background:#11141a; border:1px solid #2a2e37; border-radius:6px; padding:1px 6px; }
+    .tag.hitl { color:var(--warn); border-color:var(--warn); }
+    .tag.intent { color:var(--accent); border-color:var(--accent); }
+    form { display:flex; gap:8px; padding:14px 20px; border-top:1px solid #2a2e37; }
+    input, button { font-size:14px; border-radius:8px; border:1px solid #2a2e37; background:var(--panel); color:#e6e8ee; padding:10px 12px; }
+    #buyer { width:120px; }
+    #message { flex:1; }
+    button { background:var(--user); border:none; cursor:pointer; font-weight:600; }
+    button:disabled { opacity:.5; cursor:default; }
+    .hint { color:var(--muted); font-size:12px; }
+    .chips { display:flex; gap:6px; flex-wrap:wrap; padding:0 20px 10px; }
+    .chip { font-size:12px; background:var(--panel); border:1px solid #2a2e37; border-radius:14px; padding:4px 10px; cursor:pointer; color:var(--muted); }
+    .chip:hover { color:#e6e8ee; }
+    header a { color:var(--accent); font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Marketplace CX Agent <span class="hint">— unaffiliated Allegro-style demo</span> &nbsp;<a href="/analytics">📊 analytics →</a></h1>
+    <p>Classify → fetch (GraphQL) → apply versioned rules → respond. Refund/dispute/commission auto-flag for human review.</p>
+  </header>
+  <div id="log">
+    <div class="msg agent">Hi! Ask me about an order — returns, refunds, disputes, or seller commission. Try an order id like <b>ORD-4001</b>.</div>
+  </div>
+  <div class="chips">
+    <span class="chip" data-q="Can I return order ORD-4001?">Can I return ORD-4001?</span>
+    <span class="chip" data-q="Is ORD-4002 eligible for a refund?">Refund on ORD-4002?</span>
+    <span class="chip" data-q="What is the seller commission on ORD-4001?">Commission on ORD-4001?</span>
+    <span class="chip" data-q="Where is my order ORD-4003?">Status of ORD-4003?</span>
+  </div>
+  <form id="f">
+    <input id="buyer" value="BUY-1001" title="buyer id" />
+    <input id="message" placeholder="Type a message…" autocomplete="off" autofocus />
+    <button id="send" type="submit">Send</button>
+  </form>
+
+  <script>
+    const log = document.getElementById('log');
+    const form = document.getElementById('f');
+    const message = document.getElementById('message');
+    const buyer = document.getElementById('buyer');
+    const send = document.getElementById('send');
+
+    function add(text, who) {
+      const d = document.createElement('div');
+      d.className = 'msg ' + who;
+      d.textContent = text;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+      return d;
+    }
+    function addMeta(parent, s) {
+      const m = document.createElement('div');
+      m.className = 'meta';
+      const tags = [];
+      if (s.intent) tags.push(`<span class="tag intent">intent: ${s.intent}</span>`);
+      if (s.tools_used && s.tools_used.length) tags.push(`<span class="tag">tools: ${s.tools_used.join(', ')}</span>`);
+      if (s.meta && s.meta.respond_tier) tags.push(`<span class="tag">tier: ${s.meta.respond_tier}</span>`);
+      if (s.meta && s.meta.rule_version) tags.push(`<span class="tag">rule: ${s.meta.rule_version}</span>`);
+      if (s.needs_human) tags.push(`<span class="tag hitl">human review</span>`);
+      m.innerHTML = tags.join('');
+      parent.appendChild(m);
+    }
+
+    async function ask(text) {
+      add(text, 'user');
+      send.disabled = true;
+      const thinking = add('…', 'agent');
+      try {
+        const r = await fetch('/chat', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ message: text, buyer_id: buyer.value.trim() || null })
+        });
+        const s = await r.json();
+        thinking.textContent = s.answer || '(no answer)';
+        addMeta(thinking, s);
+      } catch (e) {
+        thinking.textContent = 'Error: ' + e;
+      } finally {
+        send.disabled = false;
+        message.focus();
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const t = message.value.trim();
+      if (!t) return;
+      message.value = '';
+      ask(t);
+    });
+    document.querySelectorAll('.chip').forEach(c =>
+      c.addEventListener('click', () => ask(c.dataset.q)));
+  </script>
+</body>
+</html>

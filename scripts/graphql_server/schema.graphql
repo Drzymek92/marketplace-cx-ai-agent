@@ -1,0 +1,118 @@
+type Buyer implements Node {
+  id: ID!
+  login: String!
+  smart: Boolean!
+  locale: String!
+}
+
+type CustomerReturn implements Node {
+  id: ID!
+  orderId: ID!
+  reason: String!
+  status: ReturnStatus!
+  openedAt: DateTime!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+"""Decimal (fixed-point)"""
+scalar Decimal
+
+type Delivery {
+  method: DeliveryMethod!
+  cost: Money!
+}
+
+enum DeliveryMethod {
+  COURIER
+  PARCEL_LOCKER
+  PICKUP_POINT
+}
+
+type LineItem {
+  quantity: Int!
+  unitPrice: Money!
+  offer: Offer
+  totalPrice: Money!
+}
+
+type Money {
+  amount: Decimal!
+  currency: String!
+}
+
+type Mutation {
+  requestReturn(orderId: ID!, reason: String!): CustomerReturn
+}
+
+interface Node {
+  id: ID!
+}
+
+type Offer implements Node {
+  id: ID!
+  name: String!
+  category: String!
+  price: Money!
+  seller: Seller
+}
+
+type Order implements Node {
+  id: ID!
+  status: OrderStatus!
+  placedAt: DateTime!
+  buyer: Buyer
+  seller: Seller
+  lineItems: [LineItem!]!
+  delivery: Delivery!
+  total: Money!
+}
+
+type OrderConnection {
+  edges: [OrderEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type OrderEdge {
+  node: Order!
+  cursor: String!
+}
+
+enum OrderStatus {
+  NEW
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Query {
+  order(id: ID!): Order
+  orders(buyerId: ID!, first: Int! = 10, after: String = null): OrderConnection!
+  offer(id: ID!): Offer
+  seller(id: ID!): Seller
+  node(id: ID!): Node
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+type Seller implements Node {
+  id: ID!
+  name: String!
+  rating: Float!
+}
