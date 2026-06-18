@@ -12,14 +12,27 @@ import re
 
 _ORDER_RE = re.compile(r"\bORD-[A-Za-z0-9]+\b", re.IGNORECASE)
 
-# Intent keyword table. Order matters: more specific / higher-stakes intents first.
+# STRONG intent keywords — specific enough that a hit is trusted at high confidence and the
+# LLM classify call is skipped. Order matters: more specific / higher-stakes intents first, so
+# "zwrot pieni" (refund) is decided before bare "zwrot" (return) and the two don't collide.
 _KEYWORDS = [
     ("commission_query", ("commission", "prowizj", "seller fee", "seller's fee")),
     ("refund_eligibility", ("refund", "money back", "zwrot pieni")),
     ("dispute_eligibility", ("dispute", "spór", "claim against")),
     ("buyer_protection", ("buyer protection", "allegro protect", "ochron")),
     ("return_check", ("return", "send back", "zwróc", "zwrot")),
-    ("order_status", ("status", "where is", "track", "gdzie", "kiedy", "delivered yet")),
+    ("order_status", ("where is my", "track my", "gdzie jest", "delivered yet")),
+]
+
+# WEAK signals — suggestive of an intent but far too common to trust on their own. "kiedy"
+# ("when") and bare "status"/"gdzie"/"track" appear in plenty of unrelated questions ("kiedy
+# dostanę odpowiedź?"), so matching one at 0.85 would confidently mis-route and starve the LLM.
+# They earn the trust floor ONLY when a concrete order id grounds them; otherwise they stay
+# deliberately below it so the cascade escalates to the LLM rather than guessing. Precision on
+# the deflection path matters more than the deflection rate — a confident wrong answer costs a
+# re-contact, which is far more expensive than the LLM call we saved.
+_WEAK_SIGNALS = [
+    ("order_status", ("status", "kiedy", "when ", "gdzie", "track", "where is")),
 ]
 
 
@@ -37,6 +50,11 @@ def deterministic_classify(message: str) -> dict:
     for intent, keys in _KEYWORDS:
         if any(k in text for k in keys):
             return {"intent": intent, "order_id": order_id, "confidence": 0.85}
+
+    for intent, keys in _WEAK_SIGNALS:
+        if any(k in text for k in keys):
+            # Grounded by an order id → trust it; bare weak signal → escalate to the LLM.
+            return {"intent": intent, "order_id": order_id, "confidence": 0.8 if order_id else 0.55}
 
     if order_id:
         # An order id with no recognizable verb — probably a status check, but unsure.

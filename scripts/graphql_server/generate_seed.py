@@ -1,12 +1,18 @@
 """Generate additional referentially-consistent marketplace data to populate the demo.
 
-Pairs with the synthetic-data-factory (`marketplace_offers` domain) for the OFFER CATALOGUE: when a
-factory CSV export is supplied it's used for realistic listing names; otherwise a built-in catalogue
+Pairs with the synthetic-data-factory for the OFFER CATALOGUE ONLY: when a factory CSV export is
+supplied (via --factory-csv) it's used for realistic listing names; otherwise a built-in catalogue
 is used so this works fully offline (the gateway isn't always reachable). The relational graph
 (sellers, buyers, orders, line items, returns) is built deterministically here with full referential
 integrity and a deliberate spread of statuses / dates / categories so the rules engine and agent are
 exercised across many cases — in/out of the 14-day returns and 30-day dispute windows, Smart! and
 non-Smart! buyers, returnable and non-returnable categories.
+
+Which factory domain: the catalogue source is the FLAT `marketplace_offers` domain, whose CSV has
+the `name`/`category`/`price_pln` columns `load_catalog()` expects. The factory also has a RELATIONAL
+`marketplace` domain (multi-table, FK-linked, `price` column) — that bundle is a standalone
+integration/FK fixture and is NOT a catalogue source here; feeding its offers CSV to --factory-csv
+yields 0 usable rows and falls back (with a warning) to the built-in catalogue.
 
 Writes scripts/inputs/generated_seed.json; `db.init_db(include_generated=True)` merges it on top of
 the canonical committed seed (new ID ranges, so it never collides with or alters ORD-4001…4004 etc.
@@ -22,6 +28,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # local scripts/ beats site-packages shadow
 
 from scripts.logger import get_logger
 
@@ -82,6 +90,10 @@ def load_catalog(factory_csv: Optional[str] = None) -> list[dict]:
                    for r in rows if r.get("name") and r.get("category") and r.get("price_pln")]
             if cat:
                 return cat
+            logger.warning(f"factory CSV {factory_csv} yielded 0 usable rows "
+                           f"(need name/category/price_pln columns); using built-in catalogue")
+        else:
+            logger.warning(f"factory CSV {factory_csv} not found; using built-in catalogue")
     return list(_BUILTIN_CATALOG)
 
 
@@ -141,9 +153,18 @@ def write_generated(data: Optional[dict] = None, path: Optional[str] = None, see
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate referentially-consistent demo seed data.")
+    parser.add_argument("--factory-csv",
+                        help="offer-catalogue CSV from synthetic-data-factory (marketplace_offers domain; "
+                             "needs name/category/price_pln columns)")
+    parser.add_argument("--seed", type=int, default=42, help="RNG seed for deterministic output")
+    args = parser.parse_args()
+
     try:
-        d = generate()
-        p = write_generated(d)
+        d = generate(seed=args.seed, catalog=load_catalog(args.factory_csv))
+        p = write_generated(d, seed=args.seed)
         logger.info(f"wrote {p}: {len(d['buyers'])} buyers, {len(d['sellers'])} sellers, "
                     f"{len(d['offers'])} offers, {len(d['orders'])} orders, "
                     f"{len(d['order_items'])} items, {len(d['returns'])} returns")

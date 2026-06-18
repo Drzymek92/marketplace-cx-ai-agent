@@ -128,10 +128,14 @@ def cache_eval_snapshot() -> None:
 
 
 def main() -> None:
-    reset = "--keep" not in sys.argv
-    seed_turns(reset=reset)
-    if "--eval" in sys.argv:
-        cache_eval_snapshot()
+    try:
+        reset = "--keep" not in sys.argv
+        seed_turns(reset=reset)
+        if "--eval" in sys.argv:
+            cache_eval_snapshot()
+    except Exception:
+        logger.exception("seed_demo failed")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

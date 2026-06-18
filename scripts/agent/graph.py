@@ -56,6 +56,8 @@ INTENT_TOOL = {
     "commission_query": ("compute_order_commission", None),
     "faq": (None, None),
     "unknown": (None, None),
+    # NB: there is intentionally no intent mapped to the `submit_return` write mutation — the agent
+    # never opens a return autonomously off an LLM classification. See AgentTools.submit_return.
 }
 
 CLASSIFY_SYSTEM = (

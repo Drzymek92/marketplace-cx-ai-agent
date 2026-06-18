@@ -30,6 +30,9 @@ def is_returnable(order: OrderView, config: RulesConfig, now: Optional[datetime]
     r = config.returns
     blocked = set(r.non_returnable_categories)
 
+    # NOTE: window is measured from placed_at, not delivered_at. Deliberate demo simplification —
+    # there's no carrier "delivered" event in the synthetic data. In production you'd anchor to
+    # delivery confirmation and define policy for never-delivered / disputed-delivery orders.
     days = (now.date() - order.placed_at.date()).days
     delivered = order.status == "DELIVERED"
     within = days <= r.window_days

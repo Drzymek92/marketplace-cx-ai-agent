@@ -208,3 +208,29 @@ def test_ambiguous_message_escalates_to_llm_classify(tools, llm_spy):
     assert s["meta"]["classify_mode"] == "llm"
     assert llm_spy["classify"] == 1
     assert s["meta"]["telemetry"]["llm_calls"] == 2
+
+
+def test_weak_signal_without_order_id_escalates(tools, llm_spy):
+    # "kiedy" ("when") is a weak signal: with no order id it must NOT be trusted at the floor,
+    # so the turn escalates to the LLM classifier instead of confidently guessing order_status.
+    s = answer("kiedy dostanę odpowiedź na moje pytanie?", tools=tools)
+    assert s["meta"]["classify_mode"] == "llm"
+    assert llm_spy["classify"] == 1
+
+
+def test_malformed_order_payload_is_clean_error(tools):
+    # A partial GraphQL payload must surface as ToolResult(ok=False), never a raw KeyError.
+    tools.client.orders["ORD-BAD"] = {"id": "ORD-BAD"}  # missing lineItems/status/buyer/placedAt
+    r = tools.call("check_return", order_id="ORD-BAD")   # graph always dispatches via call()
+    assert r.ok is False
+    assert "malformed" in (r.error or "").lower()
+
+
+def test_classify_llm_failure_falls_back(tools, monkeypatch):
+    # A malformed/failed classify call must not crash the turn — fall back to deterministic triage.
+    def boom(*a, **k):
+        raise ValueError("model returned non-JSON")
+    monkeypatch.setattr("scripts.llm_client.llm_json", boom)
+    monkeypatch.setattr("scripts.llm_client.llm_call", lambda *a, **k: "[fallback answer]")
+    s = answer("hey can you help me with something weird", tools=tools)
+    assert s["answer"]  # still answered, no exception leaked

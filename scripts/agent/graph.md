@@ -52,5 +52,5 @@ cached-or-canned). `respond` also checks the semantic cache before calling the L
 - A module-level `_GRAPH` is cached only when no `tools` are injected; tests/server pass their own.
 
 ## Open Work
-- Module 5 (HITL queue) replaces the inline `needs_human` banner with a real review record.
-- Module 7 deferred half (context ceilings/degradation, semantic cache) plugs in around `respond`.
+- None outstanding. Modules 5 (HITL feedback capture in `finalize`) and 7 (governor node + context
+  ceilings/degradation, semantic cache around `respond`) are built and wired — see the flow above.

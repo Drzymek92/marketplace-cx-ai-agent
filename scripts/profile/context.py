@@ -96,7 +96,9 @@ def record_turn(
 
     batch = cfg.budget.context.summarize_history_above_turns
     if not batch:
-        return
+        # Summarization disabled — the turn is still persisted, so return its id. (Returning
+        # None here would silently break the feedback→turn link the improvement loop relies on.)
+        return turn_id
     keep = cfg.budget.context.max_history_turns
     profile = store.get_profile(buyer_id)
     watermark = int((profile or {}).get("summary_through") or 0)

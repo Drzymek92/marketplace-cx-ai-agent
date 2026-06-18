@@ -112,6 +112,15 @@ def test_summary_is_batched_not_run_every_turn(fresh_profile_db, monkeypatch):
     assert prof["summary_through"] > 0  # watermark advanced; folded turns won't be re-summarized
 
 
+def test_record_turn_returns_id_with_summarization_off(fresh_profile_db):
+    # Regression: with summarization disabled, record_turn must still return the persisted turn id
+    # (it once returned None here), or feedback can't be linked back to its turn for the loop.
+    cfg = _cfg(summarize_history_above_turns=0)
+    tid = ctx.record_turn("BUY-1002", "hello", "faq", "hi", cfg)
+    assert tid is not None
+    assert store.recent_turns("BUY-1002", 5)[0]["turn_id"] == tid
+
+
 def test_format_for_prompt_compact(fresh_profile_db):
     block = ctx.format_for_prompt({
         "profile": {"locale": "pl", "tone_pref": "casual"},

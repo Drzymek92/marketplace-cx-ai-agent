@@ -101,6 +101,11 @@ class AgentTools:
         return ToolResult(True, _jsonable(asdict(breakdown)))
 
     # --- mutation -------------------------------------------------------------------
+    # DELIBERATE BOUNDARY: submit_return is a state-changing write, so it is intentionally NOT
+    # wired to any LLM-classified intent in graph.INTENT_TOOL. The agent reads freely but never
+    # opens a return on its own — that action is reserved for an explicit, confirmed user request
+    # (same philosophy as letting the rules engine, not the model, decide anything financial).
+    # It stays implemented + callable so a confirmation UI / explicit endpoint can invoke it.
     def submit_return(self, order_id: str, reason: str) -> ToolResult:
         result = self.client.request_return(order_id, reason)
         if not result:
