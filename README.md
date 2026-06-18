@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![CI](https://github.com/Drzymek92/marketplace-cx-ai-agent/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-103%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen)
 
 ## Overview
 
@@ -24,7 +24,7 @@ The headline design goal is **cost as a control surface**. A deterministic triag
 - **Human-in-the-loop feedback** (flagged + random-audit sample) feeding a **semi-automatic improvement loop**: metric aggregation, an eval harness with a **promotion gate**, prompt/few-shot/threshold auto-tuning (Track A), and DPO/SFT dataset export (Track B).
 - **Personalization** from a budget-aware profile + conversation-history context builder.
 - **Live analytics dashboard** (`/analytics`) attributing cost to each module and surfacing the optimization read.
-- **103 passing tests** (pytest), fully mocked — no network needed to run them.
+- **107 passing tests** (pytest), fully mocked — no network needed to run them.
 
 ## Demo
 
@@ -152,7 +152,7 @@ marketplace-cx-ai-agent/
 │   ├── llm_client.py     # OpenAI-compatible LLM client
 │   └── prompt_compressor.py
 ├── config/               # requirements, .env.example, example config.yaml
-└── tests/                # 103 pytest tests (mocked LLM + GraphQL)
+└── tests/                # 107 pytest tests (mocked LLM + GraphQL)
 ```
 
 ## License
