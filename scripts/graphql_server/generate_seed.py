@@ -160,10 +160,14 @@ def main() -> None:
                         help="offer-catalogue CSV from synthetic-data-factory (marketplace_offers domain; "
                              "needs name/category/price_pln columns)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed for deterministic output")
+    parser.add_argument("--n-orders", type=int, default=40, help="number of orders to generate")
+    parser.add_argument("--n-buyers", type=int, default=12, help="number of buyers to generate")
+    parser.add_argument("--n-sellers", type=int, default=6, help="number of sellers to generate")
     args = parser.parse_args()
 
     try:
-        d = generate(seed=args.seed, catalog=load_catalog(args.factory_csv))
+        d = generate(seed=args.seed, n_sellers=args.n_sellers, n_buyers=args.n_buyers,
+                     n_orders=args.n_orders, catalog=load_catalog(args.factory_csv))
         p = write_generated(d, seed=args.seed)
         logger.info(f"wrote {p}: {len(d['buyers'])} buyers, {len(d['sellers'])} sellers, "
                     f"{len(d['offers'])} offers, {len(d['orders'])} orders, "

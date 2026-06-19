@@ -27,7 +27,16 @@ CREATE TABLE offers   (id TEXT PRIMARY KEY, name TEXT, category TEXT, price TEXT
 CREATE TABLE orders   (id TEXT PRIMARY KEY, buyer_id TEXT, seller_id TEXT, status TEXT, placed_at TEXT, delivery_method TEXT);
 CREATE TABLE order_items (order_id TEXT, offer_id TEXT, quantity INTEGER, unit_price TEXT);
 CREATE TABLE returns  (id TEXT PRIMARY KEY, order_id TEXT, reason TEXT, status TEXT, opened_at TEXT);
+-- Monotonic id allocator for return PKs. A persistent counter (not COUNT(*)) so ids are never
+-- reused after a delete and generation is atomic under concurrency — see insert_return.
+CREATE TABLE id_sequences (name TEXT PRIMARY KEY, next_val INTEGER NOT NULL);
 CREATE INDEX idx_orders_buyer ON orders(buyer_id, placed_at DESC, id DESC);
+-- FK-column indexes for the batch loaders' `WHERE <fk> IN (...)` lookups. Without these the
+-- filter is a full table SCAN whose cost grows linearly with the table — invisible at seed
+-- scale (tens of rows) but ~12x slower than the indexed SEARCH at 40k orders (benchmarked).
+CREATE INDEX idx_order_items_order ON order_items(order_id);
+CREATE INDEX idx_returns_order ON returns(order_id);
+CREATE INDEX idx_offers_seller ON offers(seller_id);
 """
 
 _TABLES = ("buyers", "sellers", "offers", "orders", "order_items", "returns")
@@ -79,9 +88,23 @@ def init_db(force: bool = False, include_generated: bool = False) -> None:
         conn.executemany("INSERT INTO returns VALUES (:id,:order_id,:reason,:status,:opened_at)", seed_data.RETURNS)
         if include_generated:
             _merge_generated(conn)
+        _init_return_sequence(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _init_return_sequence(conn: sqlite3.Connection) -> None:
+    """Seed the returns id sequence to one above the highest existing RET-<n>, so insert_return
+    never reuses or collides with a seeded/generated id. Idempotent; only ever raises the watermark."""
+    hi = conn.execute(
+        "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) FROM returns WHERE id LIKE 'RET-%'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO id_sequences(name, next_val) VALUES('returns', ?) "
+        "ON CONFLICT(name) DO UPDATE SET next_val = MAX(id_sequences.next_val, excluded.next_val)",
+        ((hi or 5000) + 1,),
+    )
 
 
 def _merge_generated(conn: sqlite3.Connection) -> None:
@@ -205,15 +228,39 @@ def fetch_return(return_id: str) -> Optional[dict]:
 
 
 def insert_return(order_id: str, reason: str) -> Optional[dict]:
+    """Atomically allocate a monotonic RET-<n> id and insert the return.
+
+    The id is drawn from the persistent `id_sequences` counter, not `COUNT(*)`: id generation and
+    the insert run in one `BEGIN IMMEDIATE` transaction, so concurrent writers serialize, and the
+    counter only ever advances — ids are never reused after a delete and never collide with a
+    seeded/generated id (which `5001 + COUNT(*)` could do under concurrency, deletes, or range overlap).
+    """
     conn = get_conn()
+    conn.isolation_level = None  # manual transaction control (explicit BEGIN/COMMIT/ROLLBACK)
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        # Defensive for a pre-sequence (legacy) db: ensure the allocator table + row exist.
+        conn.execute("CREATE TABLE IF NOT EXISTS id_sequences (name TEXT PRIMARY KEY, next_val INTEGER NOT NULL)")
         if not conn.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone():
+            conn.execute("ROLLBACK")
             return None
-        n = conn.execute("SELECT COUNT(*) FROM returns").fetchone()[0]
-        record = {"id": f"RET-{5001 + n}", "order_id": order_id, "reason": reason,
+        row = conn.execute("SELECT next_val FROM id_sequences WHERE name='returns'").fetchone()
+        if row is None:
+            hi = conn.execute(
+                "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) FROM returns WHERE id LIKE 'RET-%'"
+            ).fetchone()[0]
+            next_val = (hi or 5000) + 1
+            conn.execute("INSERT INTO id_sequences(name, next_val) VALUES('returns', ?)", (next_val,))
+        else:
+            next_val = row[0]
+        conn.execute("UPDATE id_sequences SET next_val=? WHERE name='returns'", (next_val + 1,))
+        record = {"id": f"RET-{next_val}", "order_id": order_id, "reason": reason,
                   "status": "REQUESTED", "opened_at": datetime.now(timezone.utc).isoformat()}
         conn.execute("INSERT INTO returns VALUES (:id,:order_id,:reason,:status,:opened_at)", record)
-        conn.commit()
+        conn.execute("COMMIT")
         return record
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     finally:
         conn.close()

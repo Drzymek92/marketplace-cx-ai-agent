@@ -107,3 +107,76 @@ def test_db_init_merges_generated(tmp_path, monkeypatch):
         assert conn.execute("SELECT 1 FROM orders WHERE id='ORD-4101'").fetchone()   # generated present
     finally:
         conn.close()
+
+
+def test_fk_filter_uses_index_not_full_scan(tmp_path):
+    """The batch loaders filter children by FK (`WHERE order_id IN (...)`). Those columns must be
+    indexed or the lookup full-scans — fine at seed scale, ~12x slower at 40k orders (benchmarked).
+    Guard the query plan so the FK indexes can't silently regress."""
+    db.configure(str(tmp_path / "plan.db"))
+    db.init_db(force=True)
+    conn = db.get_conn()
+    try:
+        plan = " | ".join(r[-1] for r in conn.execute(
+            "EXPLAIN QUERY PLAN "
+            "SELECT * FROM order_items WHERE order_id IN ('ORD-4001','ORD-4002')"
+        ).fetchall())
+        assert "SCAN" not in plan and "idx_order_items_order" in plan
+    finally:
+        conn.close()
+
+
+# --- return-id allocation: sequence-backed, atomic, never reused (was COUNT(*)-derived) ----------
+def _any_order_id() -> str:
+    conn = db.get_conn()
+    try:
+        return conn.execute("SELECT id FROM orders LIMIT 1").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_insert_return_id_monotonic_and_not_reused_after_delete(fresh_db):
+    oid = _any_order_id()
+    r1, r2 = db.insert_return(oid, "first"), db.insert_return(oid, "second")
+    assert r1 and r2 and r1["id"] != r2["id"]
+
+    # Delete the most recent return. A COUNT(*)-derived PK would now hand the SAME id back out;
+    # the sequence must not — it only ever advances.
+    conn = db.get_conn()
+    try:
+        conn.execute("DELETE FROM returns WHERE id=?", (r2["id"],))
+        conn.commit()
+    finally:
+        conn.close()
+    r3 = db.insert_return(oid, "third")
+    suffix = lambda r: int(r["id"].split("-")[1])
+    assert r3["id"] not in {r1["id"], r2["id"]}            # no reuse after delete
+    assert suffix(r3) > suffix(r2) > suffix(r1)            # strictly monotonic
+
+
+def test_insert_return_unknown_order_returns_none(fresh_db):
+    assert db.insert_return("ORD-NOPE", "x") is None
+
+
+def test_insert_return_ids_stay_above_seeded_and_generated_watermark(tmp_path, monkeypatch):
+    p = tmp_path / "generated_seed.json"
+    generate_seed.write_generated(generate_seed.generate(seed=9, n_orders=30), path=str(p))
+    monkeypatch.setattr(db, "_GENERATED_PATH", p)
+    db.configure(str(tmp_path / "watermark.db"))
+    db.init_db(force=True, include_generated=True)
+
+    conn = db.get_conn()
+    try:
+        existing = {r[0] for r in conn.execute("SELECT id FROM returns WHERE id LIKE 'RET-%'")}
+        oid = conn.execute("SELECT id FROM orders LIMIT 1").fetchone()[0]
+    finally:
+        conn.close()
+    watermark = max(int(x.split("-")[1]) for x in existing)
+
+    seen: set[str] = set()
+    for i in range(12):
+        rec = db.insert_return(oid, f"r{i}")
+        n = int(rec["id"].split("-")[1])
+        assert n > watermark                               # always above any seeded/generated id
+        assert rec["id"] not in existing and rec["id"] not in seen
+        seen.add(rec["id"])
